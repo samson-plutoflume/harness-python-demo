@@ -35,11 +35,6 @@ Faker.seed(123)
 faker = Faker()
 
 
-API_KEY = os.environ["HARNESS_API_KEY"]
-BASE_URL = os.environ["HARNESS_BASE_URL"]
-EVENT_URL = os.environ["HARNESS_EVENT_URL"]
-POLLING_INTERVAL = int(os.environ["HARNESS_POLL_INTERVAL"])
-
 
 def get_target(
     tenant_id: int, subdomain: str, is_demo: bool = False, **additional_attributes: Any
@@ -117,6 +112,12 @@ def get_all_flags(client: CfClient) -> list[tuple[str, Any, Callable]]:
 
 
 def main():
+    logger.info("Initialising targets", subdomains=[t.attributes["subdomain"] for t in TARGETS])
+
+    API_KEY = os.environ["HARNESS_API_KEY"]
+    BASE_URL = os.environ["HARNESS_BASE_URL"]
+    EVENT_URL = os.environ["HARNESS_EVENT_URL"]
+    POLLING_INTERVAL = int(os.environ["HARNESS_POLL_INTERVAL"])
     logger.info("Creating client", base_url=BASE_URL, events_url=EVENT_URL)
     client = CfClient(
         API_KEY,
