@@ -45,6 +45,7 @@ def get_target(
         attributes={
             "subdomain": "".join(l for l in subdomain.lower() if "a" <= l <= "z"),
             "is_demo": is_demo,
+            "industry": "legal" if subdomain.lower().endswith("lc") else "finance",
             **additional_attributes,
         },
     )
