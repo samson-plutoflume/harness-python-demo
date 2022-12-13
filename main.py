@@ -17,7 +17,7 @@ from structlog import get_logger
 import structlog
 from faker import Faker
 
-log.setLevel(logging.WARNING)
+log.setLevel(logging.INFO)
 structlog.configure(
     processors=[
         structlog.processors.add_log_level,
