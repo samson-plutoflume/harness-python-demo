@@ -1,6 +1,7 @@
 import logging
 import os
 import time
+from typing import Any, Callable
 
 from featureflags.client import CfClient
 from featureflags.config import (
@@ -14,8 +15,9 @@ from featureflags.evaluations.auth_target import Target
 from featureflags.util import log
 from structlog import get_logger
 import structlog
+from faker import Faker
 
-log.setLevel(logging.INFO)
+log.setLevel(logging.WARNING)
 structlog.configure(
     processors=[
         structlog.processors.add_log_level,
@@ -29,20 +31,89 @@ structlog.configure(
 logger = get_logger(__name__)
 logger.info("Started Harness Demo")
 
+Faker.seed(123)
+faker = Faker()
+
 
 API_KEY = os.environ["HARNESS_API_KEY"]
 BASE_URL = os.environ["HARNESS_BASE_URL"]
 EVENT_URL = os.environ["HARNESS_EVENT_URL"]
 POLLING_INTERVAL = int(os.environ["HARNESS_POLL_INTERVAL"])
 
+
+def get_target(
+    tenant_id: int, subdomain: str, is_demo: bool = False, **additional_attributes: Any
+) -> Target:
+    return Target(
+        identifier=str(tenant_id),
+        name=str(tenant_id),
+        attributes={
+            "subdomain": "".join(l for l in subdomain.lower() if "a" <= l <= "z"),
+            "is_demo": is_demo,
+            **additional_attributes,
+        },
+    )
+
+
 TARGETS = [
-    (1, "southerton"),
-    (2, "grove"),
-    (3, "finsbury"),
-    (4, "canada"),
-    (5, "featherstone"),
+    *(
+        get_target(
+            1 + i,
+            faker.company(),
+            False,
+            region="eu-west-1",
+            defender_phase=i % 3,
+            enforcer_phase=i % 3,
+        )
+        for i in range(20)
+    ),
+    *(
+        get_target(
+            10000 + i,
+            faker.company(),
+            False,
+            region="us-west-2",
+            defender_phase=i % 3,
+            enforcer_phase=i % 3,
+        )
+        for i in range(20)
+    ),
+    *(
+        get_target(
+            90 + i,
+            f"demo{faker.first_name().lower()}",
+            True,
+            region="eu-west-1",
+            test_account=True,
+            defender_phase=2,
+            enforcer_phase=2,
+        )
+        for i in range(10)
+    ),
+    *(
+        get_target(
+            500 + i,
+            faker.company(),
+            False,
+            region="eu-west-1" if i % 2 else "us-west-2",
+            ekm=True,
+        )
+        for i in range(15)
+    ),
 ]
-FLAGS = [("doors_enabled", "bool", False), ("capacity", "int", 1)]
+
+
+def get_all_flags(client: CfClient) -> list[tuple[str, Any, Callable]]:
+    return [
+        ("account_takeover_enabled", False, client.bool_variation),
+        ("risk_hub_enabled", False, client.bool_variation),
+        ("inbound_queue_service", "kinesis", client.string_variation),
+        ("defender_message_generator", "legacy", client.string_variation),
+        ("defender_generate_semtex", False, client.bool_variation),
+        ("semtex_template_version", 1, client.int_variation),
+        ("investigate_and_report_enabled", False, client.bool_variation),
+        ("defender_via_api_quarantine", "none", client.string_variation),
+    ]
 
 
 def main():
@@ -56,41 +127,24 @@ def main():
         config=Config(pull_interval=POLLING_INTERVAL),
     )
 
-    targets = [
-        Target(
-            identifier=str(i),
-            name=name,
-            attributes={
-                "location": "emea" if i % 2 else "asia"
-            }
-        ) for i, name in TARGETS]
-    flag_settings = {(flag, target): flag_default for flag, _, flag_default in FLAGS for target, _ in TARGETS}
+    flags = get_all_flags(client)
 
     with client:
         while True:
-            logger.info("Re-requesting all flags")
-            for target in targets:
-                for flag, flag_type, flag_default in FLAGS:
-                    if flag_type == "bool":
-                        result = client.bool_variation(flag, target, flag_default)
-                    elif flag_type == "int":
-                        result = client.int_variation(flag, target, flag_default)
-                    else:
-                        result = client.string_variation(flag, target, flag_default)
-
-                    if result != flag_settings.get((flag, target.identifier)):
-                        logger.info(
-                            "Flag changed",
-                            flag_name=flag,
-                            target=target.name,
-                            target_id=target.identifier,
-                            previous_value=flag_settings.get((flag, target.identifier)),
-                            current_value=result,
-                            flag_type=str(type(result)),
-                        )
-                        flag_settings[(flag, target.identifier)] = result
-            time.sleep(5)
+            logger.info("Re-requesting flags", flags=[name for name, *_ in flags])
+            for target in TARGETS:
+                for flag, flag_default, variation_callable in flags:
+                    result = variation_callable(flag, target, flag_default)
+                    logger.info(
+                        "Found flag",
+                        flag_name=flag,
+                        flag_value=result,
+                        flag_type=str(type(result)),
+                        target_id=target.identifier,
+                        target_attributes=target.attributes,
+                    )
+            time.sleep(10)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

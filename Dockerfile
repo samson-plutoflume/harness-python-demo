@@ -6,8 +6,8 @@ ENV HARNESS_BASE_URL="https://config.ff.harness.io/api/1.0" \
 
 WORKDIR /app
 
-COPY ./ .
-
+COPY ./requirements.txt requirements.txt
 RUN pip install -r requirements.txt
 
+COPY ./main.py main.py
 CMD ["python", "main.py"]
